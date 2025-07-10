@@ -5,15 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>MEGA File Selector</title>
     
-    <!-- Improvement #2: iOS "Add to Home Screen" / PWA Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MEGA Picker">
-    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Solid_blue.svg/240px-Solid_blue.svg.png"> <!-- Placeholder icon - you can change this URL -->
+    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Solid_blue.svg/240px-Solid_blue.svg.png">
 
     <script src="https://unpkg.com/megajs@1/dist/main.browser-umd.js"></script>
     <style>
-        /* CSS is unchanged, but included for completeness */
+        /* CSS is mostly unchanged */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .container { background: white; border-radius: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); padding: 40px; max-width: 600px; width: 100%; text-align: center; }
@@ -23,6 +22,8 @@
         input[type="email"], input[type="password"], input[type="number"] { width: 100%; padding: 15px; border: 1px solid #ccd0d5; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease; }
         input:focus { outline: none; border-color: #1877f2; box-shadow: 0 0 0 2px #e7f3ff; }
         .button { background: #1877f2; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.3s ease; margin: 10px 0; width: 100%; }
+        .button.secondary { background-color: #4CAF50; } /* Green for copy all */
+        .button.secondary:hover { background-color: #45a049; }
         .button:hover { background: #166fe5; }
         .button:disabled { opacity: 0.6; cursor: not-allowed; }
         .status { margin: 20px 0; padding: 15px; border-radius: 10px; font-weight: 500; border: 1px solid transparent; }
@@ -31,7 +32,9 @@
         .status.info { background: #fffbe2; color: #7d6608; border-color: #7d6608; }
         .files-container { max-height: 350px; overflow-y: auto; margin-top: 20px; text-align: left; border: 1px solid #e0e0e0; border-radius: 10px; padding: 10px; }
         .file-item { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
-        .file-info { flex-grow: 1; margin-right: 10px; overflow: hidden; }
+        .file-info { flex-grow: 1; margin-right: 10px; overflow: hidden; display: flex; align-items: center; }
+        .file-type-icon { font-size: 1.5em; margin-right: 12px; }
+        .file-details { overflow: hidden; }
         .file-name { font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-size { color: #666; font-size: 0.9em; }
         .action-btn { background: #e7f3ff; color: #1877f2; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
@@ -61,7 +64,6 @@
                 <label for="password">MEGA Password:</label>
                 <input type="password" id="password" placeholder="Your password" required>
             </div>
-            <!-- Improvement #3: "Remember Me" Checkbox -->
             <div class="remember-me">
                 <input type="checkbox" id="rememberMe">
                 <label for="rememberMe">Remember Me</label>
@@ -86,6 +88,7 @@
                 <input type="number" id="fileCount" value="10" min="1">
             </div>
             <button class="button" onclick="selectRandomFiles()">🎲 Select Random Files</button>
+            <button class="button secondary" onclick="copyAllLinks()">📋 Copy All Links</button> <!-- Feature #2 -->
             <button class="button" style="background-color: #606770;" onclick="logout()">🚪 Logout</button>
         </div>
         
@@ -98,13 +101,10 @@
         let allFiles = [];
         let currentSelectedFiles = [];
 
-        // Improvement #3: On page load, check for saved credentials
         document.addEventListener('DOMContentLoaded', () => {
             const savedEmail = localStorage.getItem('megaEmail');
-            const savedPassword = localStorage.getItem('megaPassword');
-            if (savedEmail && savedPassword) {
+            if (savedEmail) {
                 document.getElementById('email').value = savedEmail;
-                document.getElementById('password').value = savedPassword;
                 document.getElementById('rememberMe').checked = true;
             }
         });
@@ -124,28 +124,37 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
+        // Feature #1: Get file type from name
+        function getFileType(fileName) {
+            const extension = (fileName || '').split('.').pop().toLowerCase();
+            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+            const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm'];
+            if (imageExts.includes(extension)) return '🖼️';
+            if (videoExts.includes(extension)) return '🎬';
+            return '📄';
+        }
+
         async function loginToMega() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const rememberMe = document.getElementById('rememberMe').checked;
             if (!email || !password) return showStatus('Please enter both email and password', 'error');
 
-            // Improvement #3: Save credentials if checked
             if (rememberMe) {
                 localStorage.setItem('megaEmail', email);
-                localStorage.setItem('megaPassword', password);
+                // For security, we don't save the password itself, just the email.
+                // The user will need to re-enter the password.
             } else {
                 localStorage.removeItem('megaEmail');
-                localStorage.removeItem('megaPassword');
             }
 
             showStatus('<span class="loading"></span>Connecting to MEGA...', 'info');
             
             try {
-                storage = new window.mega.Storage({ email, password });
+                storage = new window.mega.Storage({ email, password, keepalive: true });
                 
                 await storage.ready;
-                showStatus('Successfully connected! Now loading file list... This may take several minutes for large accounts.', 'success');
+                showStatus('Successfully connected! Now loading file list... This may take several minutes.', 'success');
                 
                 await loadAllFiles();
 
@@ -192,8 +201,11 @@
             filesListDiv.innerHTML = '<h3>Selected Random Files:</h3>' + currentSelectedFiles.map((file, index) => `
                 <div class="file-item">
                     <div class="file-info">
-                        <div class="file-name">${file.name}</div>
-                        <div class="file-size">${formatBytes(file.size)}</div>
+                        <span class="file-type-icon">${getFileType(file.name)}</span>
+                        <div class="file-details">
+                            <div class="file-name">${file.name}</div>
+                            <div class="file-size">${formatBytes(file.size)}</div>
+                        </div>
                     </div>
                     <button id="btn-${index}" class="action-btn" onclick="getShareLink(this, ${index})">🔗 Share</button>
                 </div>
@@ -204,41 +216,51 @@
             button.disabled = true;
             button.innerHTML = '<span class="loading"></span>';
             
-            let url = '';
             try {
                 const fileToLink = currentSelectedFiles[index]; 
                 if (!fileToLink) throw new Error('File not found in the current selection.');
 
                 showStatus('Generating secure link...', 'info');
-                url = await fileToLink.link({});
+                const url = await fileToLink.link({});
                 
-                let copied = false;
-                try {
-                    await navigator.clipboard.writeText(url);
-                    copied = true;
-                } catch (clipboardError) {
-                    console.warn("Could not write to clipboard:", clipboardError);
-                }
-
                 window.open(url, '_blank');
-
-                if (copied) {
-                    showStatus('Link copied to clipboard & opened in a new tab!', 'success');
-                } else {
-                    showStatus('Link opened in a new tab! Could not copy to clipboard.', 'info');
-                }
+                showStatus('Link opened in a new tab!', 'success');
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                if (url) {
-                    showStatus('Link generated, but automatic actions failed. Please copy it manually.', 'info');
-                    window.prompt("Here is your link. Press Ctrl+C or Cmd+C to copy:", url);
-                } else {
-                    showStatus(`Could not generate link: ${errorMessage}`, 'error');
-                }
+                showStatus(`Could not generate link: ${errorMessage}`, 'error');
             } finally {
                 button.disabled = false;
                 button.innerHTML = '🔗 Share';
+            }
+        }
+
+        // Feature #2: Copy All Links
+        async function copyAllLinks() {
+            if (currentSelectedFiles.length === 0) {
+                return showStatus('No files selected to copy.', 'info');
+            }
+
+            const copyButton = document.querySelector('.button.secondary');
+            copyButton.disabled = true;
+            copyButton.innerHTML = '<span class="loading"></span>Generating Links...';
+            showStatus(`Generating ${currentSelectedFiles.length} links...`, 'info');
+
+            try {
+                const linkPromises = currentSelectedFiles.map(file => file.link({}));
+                const urls = await Promise.all(linkPromises);
+                
+                const textToCopy = urls.join('\n');
+                await navigator.clipboard.writeText(textToCopy);
+
+                showStatus(`${urls.length} links copied to clipboard!`, 'success');
+
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                showStatus(`Could not generate all links: ${errorMessage}`, 'error');
+            } finally {
+                copyButton.disabled = false;
+                copyButton.innerHTML = '📋 Copy All Links';
             }
         }
 
@@ -250,7 +272,7 @@
             document.getElementById('mainApp').classList.add('hidden');
             document.getElementById('selectedFiles').classList.add('hidden');
             document.getElementById('status').innerHTML = '';
-            // We don't clear the saved password on logout, so it's pre-filled next time.
+            document.getElementById('password').value = '';
         }
     </script>
 </body>
