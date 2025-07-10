@@ -12,7 +12,7 @@
 
     <script src="https://unpkg.com/megajs@1/dist/main.browser-umd.js"></script>
     <style>
-        /* CSS is mostly unchanged, with additions for new elements */
+        /* CSS is unchanged */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .container { background: white; border-radius: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); padding: 40px; max-width: 600px; width: 100%; text-align: center; }
@@ -86,7 +86,6 @@
                 <label for="fileCount">Number of random files to select:</label>
                 <input type="number" id="fileCount" value="10" min="1">
             </div>
-            <!-- Bug Fix #2: Added File Type Filters -->
             <div class="checkbox-group">
                 <label><input type="checkbox" id="filterImages" checked>🖼️ Images</label>
                 <label><input type="checkbox" id="filterVideos" checked>🎬 Videos</label>
@@ -176,7 +175,6 @@
         }
 
         function selectRandomFiles() {
-            // Bug Fix #2: Read the filter checkboxes
             const filterImages = document.getElementById('filterImages').checked;
             const filterVideos = document.getElementById('filterVideos').checked;
             const filterOthers = document.getElementById('filterOthers').checked;
@@ -254,6 +252,7 @@
             copyButton.innerHTML = '<span class="loading"></span>Generating Links...';
             showStatus(`Generating ${currentSelectedFiles.length} links...`, 'info');
 
+            // THE FIX: Declare `urls` outside the try block
             let urls;
             try {
                 const linkPromises = currentSelectedFiles.map(file => file.link({}));
@@ -262,15 +261,17 @@
                 const textToCopy = urls.join('\n');
                 await navigator.clipboard.writeText(textToCopy);
                 showStatus(`${urls.length} links copied to clipboard!`, 'success');
+                // After success, we put the original file list back.
+                displaySelectedFiles();
 
             } catch (error) {
-                // Bug Fix #1: The fallback now works correctly
                 showStatus('Could not copy automatically. Please copy from the box below.', 'info');
                 const filesListDiv = document.getElementById('selectedFiles');
                 
                 let fallbackHTML = '<h3>Copy Your Links:</h3>';
                 fallbackHTML += `<p style="font-size: 12px; margin-bottom: 10px;">Press Cmd+A or Ctrl+A to select all, then Cmd+C or Ctrl+C to copy.</p>`;
-                fallbackHTML += `<textarea rows="10" readonly>${urls ? urls.join('\n') : 'Error: Links could not be generated.'}</textarea>`;
+                // THE FIX: Use the `urls` variable which is now accessible here.
+                fallbackHTML += `<textarea rows="10" readonly>${urls ? urls.join('\n') : 'Error: An error occurred before links could be generated.'}</textarea>`;
                 
                 filesListDiv.innerHTML = fallbackHTML;
 
