@@ -93,6 +93,7 @@
             </div>
             <button class="button" onclick="selectRandomFiles()">🎲 Select Random Files</button>
             <button class="button secondary" onclick="copyAllLinks()">📋 Copy All Links</button>
+            <button class="button secondary" onclick="copySelectiveLinks()" style="background-color: #FF9800;">🔄 Copy Links (Skip Failed)</button>
             <button class="button" style="background-color: #606770;" onclick="logout()">🚪 Logout</button>
         </div>
         
@@ -252,61 +253,165 @@
             copyButton.innerHTML = '<span class="loading"></span>Generating Links...';
             showStatus(`Generating ${currentSelectedFiles.length} links...`, 'info');
 
-            let urls = [];
-            let errorDetails = '';
+            let successfulLinks = [];
+            let failedFiles = [];
+            let processedCount = 0;
 
-            try {
-                // Generate all links
-                const linkPromises = currentSelectedFiles.map(async (file, index) => {
-                    try {
-                        return await file.link({});
-                    } catch (error) {
-                        throw new Error(`Failed to generate link for "${file.name}": ${error.message}`);
-                    }
-                });
-                
-                urls = await Promise.all(linkPromises);
-                
-                // Try to copy to clipboard
-                const textToCopy = urls.join('\n');
-                await navigator.clipboard.writeText(textToCopy);
-                showStatus(`${urls.length} links copied to clipboard!`, 'success');
-                displaySelectedFiles();
-
-            } catch (error) {
-                errorDetails = error instanceof Error ? error.message : String(error);
-                console.error('Copy all links error:', error);
-                
-                // Show fallback interface
-                showStatus('Could not copy automatically. Please copy from the box below.', 'info');
-                const filesListDiv = document.getElementById('selectedFiles');
-                
-                let fallbackHTML = '<h3>Copy Your Links:</h3>';
-                fallbackHTML += `<p style="font-size: 12px; margin-bottom: 10px; color: #666;">Press Ctrl+A (or Cmd+A) to select all, then Ctrl+C (or Cmd+C) to copy.</p>`;
-                
-                if (urls.length > 0) {
-                    // Some links were generated successfully
-                    fallbackHTML += `<textarea rows="10" readonly style="font-family: monospace; font-size: 12px;">${urls.join('\n')}</textarea>`;
-                    if (urls.length < currentSelectedFiles.length) {
-                        fallbackHTML += `<p style="font-size: 12px; color: #c00; margin-top: 10px;">Note: Only ${urls.length} out of ${currentSelectedFiles.length} links were generated successfully.</p>`;
-                    }
-                } else {
-                    // No links were generated
-                    fallbackHTML += `<p style="color: #c00; margin: 10px 0;">Error: ${errorDetails}</p>`;
-                    fallbackHTML += `<p style="font-size: 12px; color: #666;">Try generating links one by one using the individual Share buttons.</p>`;
+            // Process files one by one to avoid overwhelming the API
+            for (const file of currentSelectedFiles) {
+                try {
+                    showStatus(`Generating links... ${processedCount + 1}/${currentSelectedFiles.length}`, 'info');
+                    const url = await file.link({});
+                    successfulLinks.push(url);
+                } catch (error) {
+                    console.error(`Failed to generate link for ${file.name}:`, error);
+                    failedFiles.push({
+                        name: file.name,
+                        error: error.message || String(error)
+                    });
                 }
-                
-                filesListDiv.innerHTML = fallbackHTML;
-
-                const textarea = filesListDiv.querySelector('textarea');
-                if (textarea) {
-                    textarea.focus();
-                    textarea.select();
-                }
-            } finally {
-                copyButton.disabled = false;
-                copyButton.innerHTML = '📋 Copy All Links';
+                processedCount++;
             }
+
+            // Show results
+            if (successfulLinks.length > 0) {
+                try {
+                    const textToCopy = successfulLinks.join('\n');
+                    await navigator.clipboard.writeText(textToCopy);
+                    
+                    if (failedFiles.length === 0) {
+                        showStatus(`All ${successfulLinks.length} links copied to clipboard!`, 'success');
+                        displaySelectedFiles();
+                    } else {
+                        showStatus(`${successfulLinks.length} links copied. ${failedFiles.length} files failed.`, 'info');
+                        showPartialResults(successfulLinks, failedFiles);
+                    }
+                } catch (clipboardError) {
+                    showStatus('Links generated but clipboard copy failed. See results below.', 'info');
+                    showPartialResults(successfulLinks, failedFiles);
+                }
+            } else {
+                showStatus('No links could be generated. All files failed.', 'error');
+                showFailedResults(failedFiles);
+            }
+
+            copyButton.disabled = false;
+            copyButton.innerHTML = '📋 Copy All Links';
+        }
+
+        function showPartialResults(successfulLinks, failedFiles) {
+            const filesListDiv = document.getElementById('selectedFiles');
+            
+            let html = '<h3>Link Generation Results:</h3>';
+            
+            if (successfulLinks.length > 0) {
+                html += '<h4 style="color: #4CAF50; margin-top: 20px;">✅ Successful Links:</h4>';
+                html += '<p style="font-size: 12px; margin-bottom: 10px; color: #666;">Press Ctrl+A (or Cmd+A) to select all, then Ctrl+C (or Cmd+C) to copy.</p>';
+                html += `<textarea rows="8" readonly style="font-family: monospace; font-size: 12px; margin-bottom: 15px;">${successfulLinks.join('\n')}</textarea>`;
+            }
+            
+            if (failedFiles.length > 0) {
+                html += '<h4 style="color: #c00; margin-top: 20px;">❌ Failed Files:</h4>';
+                html += '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; padding: 10px; margin-top: 10px;">';
+                failedFiles.forEach(file => {
+                    html += `<div style="margin-bottom: 10px; padding: 8px; background: #ffeaa7; border-radius: 4px;">`;
+                    html += `<strong>${file.name}</strong><br>`;
+                    html += `<small style="color: #666;">${file.error}</small>`;
+                    html += `</div>`;
+                });
+                html += '</div>';
+                html += '<p style="font-size: 12px; color: #666; margin-top: 10px;">💡 Try using individual Share buttons for failed files, or check if they\'re in read-only shares.</p>';
+            }
+            
+            html += '<button class="button" onclick="displaySelectedFiles()" style="margin-top: 15px;">🔙 Back to File List</button>';
+            
+            filesListDiv.innerHTML = html;
+
+            const textarea = filesListDiv.querySelector('textarea');
+            if (textarea) {
+                textarea.focus();
+                textarea.select();
+            }
+        }
+
+        function showFailedResults(failedFiles) {
+            const filesListDiv = document.getElementById('selectedFiles');
+            
+            let html = '<h3>❌ Link Generation Failed</h3>';
+            html += '<p style="color: #c00; margin: 15px 0;">None of the selected files could generate public links.</p>';
+            html += '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; padding: 10px; margin: 15px 0;">';
+            
+            failedFiles.forEach(file => {
+                html += `<div style="margin-bottom: 10px; padding: 8px; background: #ffeaa7; border-radius: 4px;">`;
+                html += `<strong>${file.name}</strong><br>`;
+                html += `<small style="color: #666;">${file.error}</small>`;
+                html += `</div>`;
+            });
+            
+            html += '</div>';
+            html += '<div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 15px 0;">';
+            html += '<h4 style="color: #1976d2; margin-bottom: 10px;">💡 Possible Solutions:</h4>';
+            html += '<ul style="text-align: left; color: #666; font-size: 14px;">';
+            html += '<li>These files might be in read-only shares or have restricted permissions</li>';
+            html += '<li>Try selecting different files from your own uploads</li>';
+            html += '<li>Check if you have the necessary permissions to create public links</li>';
+            html += '<li>Some files might be corrupted or in an inconsistent state</li>';
+            html += '</ul>';
+            html += '</div>';
+            html += '<button class="button" onclick="displaySelectedFiles()" style="margin-top: 15px;">🔙 Back to File List</button>';
+            
+            filesListDiv.innerHTML = html;
+        }
+
+        async function copySelectiveLinks() {
+            if (currentSelectedFiles.length === 0) {
+                return showStatus('No files selected to copy.', 'info');
+            }
+
+            const copyButton = document.querySelector('[onclick="copySelectiveLinks()"]');
+            copyButton.disabled = true;
+            copyButton.innerHTML = '<span class="loading"></span>Copying...';
+            showStatus(`Testing and copying links for ${currentSelectedFiles.length} files...`, 'info');
+
+            let successfulLinks = [];
+            let processedCount = 0;
+
+            // Process files one by one and skip failures silently
+            for (const file of currentSelectedFiles) {
+                try {
+                    showStatus(`Processing... ${processedCount + 1}/${currentSelectedFiles.length}`, 'info');
+                    const url = await file.link({});
+                    successfulLinks.push(url);
+                } catch (error) {
+                    // Silently skip failed files
+                    console.log(`Skipped ${file.name}: ${error.message}`);
+                }
+                processedCount++;
+            }
+
+            // Try to copy successful links
+            if (successfulLinks.length > 0) {
+                try {
+                    const textToCopy = successfulLinks.join('\n');
+                    await navigator.clipboard.writeText(textToCopy);
+                    
+                    const skippedCount = currentSelectedFiles.length - successfulLinks.length;
+                    if (skippedCount > 0) {
+                        showStatus(`${successfulLinks.length} links copied (${skippedCount} files skipped due to access restrictions)`, 'success');
+                    } else {
+                        showStatus(`All ${successfulLinks.length} links copied to clipboard!`, 'success');
+                    }
+                    displaySelectedFiles();
+                } catch (clipboardError) {
+                    showStatus('Links generated but clipboard failed. Check console for URLs.', 'info');
+                    console.log('Generated links:', successfulLinks);
+                }
+            } else {
+                showStatus('No links could be generated. All files have access restrictions.', 'error');
+            }
+
+            copyButton.disabled = false;
+            copyButton.innerHTML = '🔄 Copy Links (Skip Failed)';
         }
 
         function logout() {
