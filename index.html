@@ -252,26 +252,49 @@
             copyButton.innerHTML = '<span class="loading"></span>Generating Links...';
             showStatus(`Generating ${currentSelectedFiles.length} links...`, 'info');
 
-            // THE FIX: Declare `urls` outside the try block
-            let urls;
+            let urls = [];
+            let errorDetails = '';
+
             try {
-                const linkPromises = currentSelectedFiles.map(file => file.link({}));
+                // Generate all links
+                const linkPromises = currentSelectedFiles.map(async (file, index) => {
+                    try {
+                        return await file.link({});
+                    } catch (error) {
+                        throw new Error(`Failed to generate link for "${file.name}": ${error.message}`);
+                    }
+                });
+                
                 urls = await Promise.all(linkPromises);
                 
+                // Try to copy to clipboard
                 const textToCopy = urls.join('\n');
                 await navigator.clipboard.writeText(textToCopy);
                 showStatus(`${urls.length} links copied to clipboard!`, 'success');
-                // After success, we put the original file list back.
                 displaySelectedFiles();
 
             } catch (error) {
+                errorDetails = error instanceof Error ? error.message : String(error);
+                console.error('Copy all links error:', error);
+                
+                // Show fallback interface
                 showStatus('Could not copy automatically. Please copy from the box below.', 'info');
                 const filesListDiv = document.getElementById('selectedFiles');
                 
                 let fallbackHTML = '<h3>Copy Your Links:</h3>';
-                fallbackHTML += `<p style="font-size: 12px; margin-bottom: 10px;">Press Cmd+A or Ctrl+A to select all, then Cmd+C or Ctrl+C to copy.</p>`;
-                // THE FIX: Use the `urls` variable which is now accessible here.
-                fallbackHTML += `<textarea rows="10" readonly>${urls ? urls.join('\n') : 'Error: An error occurred before links could be generated.'}</textarea>`;
+                fallbackHTML += `<p style="font-size: 12px; margin-bottom: 10px; color: #666;">Press Ctrl+A (or Cmd+A) to select all, then Ctrl+C (or Cmd+C) to copy.</p>`;
+                
+                if (urls.length > 0) {
+                    // Some links were generated successfully
+                    fallbackHTML += `<textarea rows="10" readonly style="font-family: monospace; font-size: 12px;">${urls.join('\n')}</textarea>`;
+                    if (urls.length < currentSelectedFiles.length) {
+                        fallbackHTML += `<p style="font-size: 12px; color: #c00; margin-top: 10px;">Note: Only ${urls.length} out of ${currentSelectedFiles.length} links were generated successfully.</p>`;
+                    }
+                } else {
+                    // No links were generated
+                    fallbackHTML += `<p style="color: #c00; margin: 10px 0;">Error: ${errorDetails}</p>`;
+                    fallbackHTML += `<p style="font-size: 12px; color: #666;">Try generating links one by one using the individual Share buttons.</p>`;
+                }
                 
                 filesListDiv.innerHTML = fallbackHTML;
 
