@@ -80,6 +80,7 @@
     <script>
         let storage = null;
         let allFiles = [];
+        let currentSelectedFiles = []; // This will hold the currently displayed batch
 
         function showStatus(message, type = 'info') {
             const statusDiv = document.getElementById('status');
@@ -106,12 +107,6 @@
             try {
                 storage = new window.mega.Storage({ email, password });
                 
-                storage.on('error', (e) => {
-                    // This helps catch errors during the ready process
-                    console.error('megajs error:', e);
-                    showStatus(`A connection error occurred: ${e.message}`, 'error');
-                });
-
                 await storage.ready;
                 showStatus('Successfully connected! Now loading file list... This may take several minutes for large accounts.', 'success');
                 
@@ -121,7 +116,8 @@
                 document.getElementById('mainApp').classList.remove('hidden');
 
             } catch (error) {
-                showStatus(`Login failed: ${error.message || 'Unknown error'}`, 'error');
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                showStatus(`Login failed: ${errorMessage}`, 'error');
             }
         }
 
@@ -129,15 +125,14 @@
             if (!storage) return;
             allFiles = [];
             
-            // THE FIX: Use Object.values() because storage.files is a plain object, not a Map.
             for (const file of Object.values(storage.files)) {
                 if (!file.directory) {
-                    allFiles.push(file);
+                    allFiles.push(file); // Store the full, live file object
                 }
             }
 
             document.getElementById('totalFiles').textContent = allFiles.length;
-            showStatus(`Loaded ${allFiles.length} files from your account. Ready to select.`, 'success');
+            showStatus(`Loaded ${allFiles.length} files. Ready to select.`, 'success');
         }
 
         function selectRandomFiles() {
@@ -147,36 +142,38 @@
             if (fileCount > allFiles.length) return showStatus(`Cannot select ${fileCount} files, you only have ${allFiles.length}.`, 'error');
 
             const shuffled = [...allFiles].sort(() => 0.5 - Math.random());
-            const selected = shuffled.slice(0, fileCount);
+            currentSelectedFiles = shuffled.slice(0, fileCount); // Store the selection globally
             
-            document.getElementById('selectedCount').textContent = selected.length;
-            displaySelectedFiles(selected);
-            showStatus(`Successfully selected ${selected.length} random files!`, 'success');
+            document.getElementById('selectedCount').textContent = currentSelectedFiles.length;
+            displaySelectedFiles();
+            showStatus(`Successfully selected ${currentSelectedFiles.length} random files!`, 'success');
         }
 
-        function displaySelectedFiles(selected) {
+        function displaySelectedFiles() {
             const filesListDiv = document.getElementById('selectedFiles');
             filesListDiv.classList.remove('hidden');
-            filesListDiv.innerHTML = '<h3>Selected Random Files:</h3>' + selected.map((file, index) => `
+            // THE FIX: Pass the index, not the handle, to the onclick function
+            filesListDiv.innerHTML = '<h3>Selected Random Files:</h3>' + currentSelectedFiles.map((file, index) => `
                 <div class="file-item">
                     <div class="file-info">
                         <div class="file-name">${file.name}</div>
                         <div class="file-size">${formatBytes(file.size)}</div>
                     </div>
-                    <button id="btn-${index}" class="action-btn" onclick="getShareLink(this, '${file.handle}')">🔗 Share</button>
+                    <button id="btn-${index}" class="action-btn" onclick="getShareLink(this, ${index})">🔗 Share</button>
                 </div>
             `).join('');
         }
 
-        async function getShareLink(button, handle) {
+        // THE FIX: Function now accepts an index
+        async function getShareLink(button, index) {
             button.disabled = true;
             button.innerHTML = '<span class="loading"></span>';
             showStatus('Generating secure link...', 'info');
 
             try {
-                // THE SECOND FIX: Use bracket notation for object lookup, not .get()
-                const fileToLink = storage.files[handle];
-                if (!fileToLink) throw new Error('File object not found in current session.');
+                // THE FIX: Look up the file directly in our array by its index
+                const fileToLink = currentSelectedFiles[index]; 
+                if (!fileToLink) throw new Error('File not found in the current selection.');
 
                 const url = await fileToLink.link({});
                 
@@ -186,7 +183,8 @@
                 window.open(url, '_blank');
 
             } catch (error) {
-                showStatus(`Could not generate link: ${error.message}`, 'error');
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                showStatus(`Could not generate link: ${errorMessage}`, 'error');
             } finally {
                 button.disabled = false;
                 button.innerHTML = '🔗 Share';
@@ -196,6 +194,7 @@
         function logout() {
             storage = null;
             allFiles = [];
+            currentSelectedFiles = [];
             document.getElementById('loginForm').classList.remove('hidden');
             document.getElementById('mainApp').classList.add('hidden');
             document.getElementById('selectedFiles').classList.add('hidden');
