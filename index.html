@@ -2,10 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MEGA Random File Selector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>MEGA File Selector</title>
+    
+    <!-- Improvement #2: iOS "Add to Home Screen" / PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="MEGA Picker">
+    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Solid_blue.svg/240px-Solid_blue.svg.png"> <!-- Placeholder icon - you can change this URL -->
+
     <script src="https://unpkg.com/megajs@1/dist/main.browser-umd.js"></script>
     <style>
+        /* CSS is unchanged, but included for completeness */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .container { background: white; border-radius: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); padding: 40px; max-width: 600px; width: 100%; text-align: center; }
@@ -36,6 +44,8 @@
         .stat-item { background: #f0f2f5; padding: 15px; border-radius: 10px; }
         .stat-number { font-size: 2em; font-weight: bold; color: #1877f2; }
         .stat-label { color: #606770; font-size: 0.9em; }
+        .remember-me { display: flex; align-items: center; justify-content: center; margin-bottom: 20px; font-size: 14px; color: #606770; }
+        .remember-me input { margin-right: 8px; }
     </style>
 </head>
 <body>
@@ -51,6 +61,12 @@
                 <label for="password">MEGA Password:</label>
                 <input type="password" id="password" placeholder="Your password" required>
             </div>
+            <!-- Improvement #3: "Remember Me" Checkbox -->
+            <div class="remember-me">
+                <input type="checkbox" id="rememberMe">
+                <label for="rememberMe">Remember Me</label>
+            </div>
+            <p style="font-size: 12px; color: #c00; margin-bottom: 15px;">Warning: "Remember Me" stores your password in your browser. Only use this on a trusted, personal device.</p>
             <button class="button" onclick="loginToMega()">Connect to MEGA</button>
         </div>
         
@@ -82,6 +98,17 @@
         let allFiles = [];
         let currentSelectedFiles = [];
 
+        // Improvement #3: On page load, check for saved credentials
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedEmail = localStorage.getItem('megaEmail');
+            const savedPassword = localStorage.getItem('megaPassword');
+            if (savedEmail && savedPassword) {
+                document.getElementById('email').value = savedEmail;
+                document.getElementById('password').value = savedPassword;
+                document.getElementById('rememberMe').checked = true;
+            }
+        });
+
         function showStatus(message, type = 'info') {
             const statusDiv = document.getElementById('status');
             statusDiv.innerHTML = message;
@@ -100,7 +127,17 @@
         async function loginToMega() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
+            const rememberMe = document.getElementById('rememberMe').checked;
             if (!email || !password) return showStatus('Please enter both email and password', 'error');
+
+            // Improvement #3: Save credentials if checked
+            if (rememberMe) {
+                localStorage.setItem('megaEmail', email);
+                localStorage.setItem('megaPassword', password);
+            } else {
+                localStorage.removeItem('megaEmail');
+                localStorage.removeItem('megaPassword');
+            }
 
             showStatus('<span class="loading"></span>Connecting to MEGA...', 'info');
             
@@ -169,15 +206,12 @@
             
             let url = '';
             try {
-                // Step 1: Get the file object.
                 const fileToLink = currentSelectedFiles[index]; 
                 if (!fileToLink) throw new Error('File not found in the current selection.');
 
-                // Step 2: Generate the link. This is the main network request.
                 showStatus('Generating secure link...', 'info');
                 url = await fileToLink.link({});
                 
-                // Step 3: Try to open and copy, but handle failures gracefully.
                 let copied = false;
                 try {
                     await navigator.clipboard.writeText(url);
@@ -196,13 +230,10 @@
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-
-                // If the link was generated but the clipboard/open part failed, provide a fallback.
                 if (url) {
                     showStatus('Link generated, but automatic actions failed. Please copy it manually.', 'info');
                     window.prompt("Here is your link. Press Ctrl+C or Cmd+C to copy:", url);
                 } else {
-                    // If the link generation itself failed.
                     showStatus(`Could not generate link: ${errorMessage}`, 'error');
                 }
             } finally {
@@ -219,7 +250,7 @@
             document.getElementById('mainApp').classList.add('hidden');
             document.getElementById('selectedFiles').classList.add('hidden');
             document.getElementById('status').innerHTML = '';
-            document.getElementById('password').value = '';
+            // We don't clear the saved password on logout, so it's pre-filled next time.
         }
     </script>
 </body>
