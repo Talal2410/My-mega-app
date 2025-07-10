@@ -80,7 +80,7 @@
     <script>
         let storage = null;
         let allFiles = [];
-        let currentSelectedFiles = []; // This will hold the currently displayed batch
+        let currentSelectedFiles = [];
 
         function showStatus(message, type = 'info') {
             const statusDiv = document.getElementById('status');
@@ -127,7 +127,7 @@
             
             for (const file of Object.values(storage.files)) {
                 if (!file.directory) {
-                    allFiles.push(file); // Store the full, live file object
+                    allFiles.push(file);
                 }
             }
 
@@ -142,7 +142,7 @@
             if (fileCount > allFiles.length) return showStatus(`Cannot select ${fileCount} files, you only have ${allFiles.length}.`, 'error');
 
             const shuffled = [...allFiles].sort(() => 0.5 - Math.random());
-            currentSelectedFiles = shuffled.slice(0, fileCount); // Store the selection globally
+            currentSelectedFiles = shuffled.slice(0, fileCount);
             
             document.getElementById('selectedCount').textContent = currentSelectedFiles.length;
             displaySelectedFiles();
@@ -152,7 +152,6 @@
         function displaySelectedFiles() {
             const filesListDiv = document.getElementById('selectedFiles');
             filesListDiv.classList.remove('hidden');
-            // THE FIX: Pass the index, not the handle, to the onclick function
             filesListDiv.innerHTML = '<h3>Selected Random Files:</h3>' + currentSelectedFiles.map((file, index) => `
                 <div class="file-item">
                     <div class="file-info">
@@ -164,27 +163,48 @@
             `).join('');
         }
 
-        // THE FIX: Function now accepts an index
         async function getShareLink(button, index) {
             button.disabled = true;
             button.innerHTML = '<span class="loading"></span>';
-            showStatus('Generating secure link...', 'info');
-
+            
+            let url = '';
             try {
-                // THE FIX: Look up the file directly in our array by its index
+                // Step 1: Get the file object.
                 const fileToLink = currentSelectedFiles[index]; 
                 if (!fileToLink) throw new Error('File not found in the current selection.');
 
-                const url = await fileToLink.link({});
+                // Step 2: Generate the link. This is the main network request.
+                showStatus('Generating secure link...', 'info');
+                url = await fileToLink.link({});
                 
-                await navigator.clipboard.writeText(url);
-                showStatus('Link copied to clipboard!', 'success');
-                
+                // Step 3: Try to open and copy, but handle failures gracefully.
+                let copied = false;
+                try {
+                    await navigator.clipboard.writeText(url);
+                    copied = true;
+                } catch (clipboardError) {
+                    console.warn("Could not write to clipboard:", clipboardError);
+                }
+
                 window.open(url, '_blank');
+
+                if (copied) {
+                    showStatus('Link copied to clipboard & opened in a new tab!', 'success');
+                } else {
+                    showStatus('Link opened in a new tab! Could not copy to clipboard.', 'info');
+                }
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                showStatus(`Could not generate link: ${errorMessage}`, 'error');
+
+                // If the link was generated but the clipboard/open part failed, provide a fallback.
+                if (url) {
+                    showStatus('Link generated, but automatic actions failed. Please copy it manually.', 'info');
+                    window.prompt("Here is your link. Press Ctrl+C or Cmd+C to copy:", url);
+                } else {
+                    // If the link generation itself failed.
+                    showStatus(`Could not generate link: ${errorMessage}`, 'error');
+                }
             } finally {
                 button.disabled = false;
                 button.innerHTML = '🔗 Share';
