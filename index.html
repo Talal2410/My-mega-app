@@ -105,6 +105,13 @@
             
             try {
                 storage = new window.mega.Storage({ email, password });
+                
+                storage.on('error', (e) => {
+                    // This helps catch errors during the ready process
+                    console.error('megajs error:', e);
+                    showStatus(`A connection error occurred: ${e.message}`, 'error');
+                });
+
                 await storage.ready;
                 showStatus('Successfully connected! Now loading file list... This may take several minutes for large accounts.', 'success');
                 
@@ -114,7 +121,7 @@
                 document.getElementById('mainApp').classList.remove('hidden');
 
             } catch (error) {
-                showStatus(`Login failed: ${error.message}`, 'error');
+                showStatus(`Login failed: ${error.message || 'Unknown error'}`, 'error');
             }
         }
 
@@ -122,8 +129,8 @@
             if (!storage) return;
             allFiles = [];
             
-            // This is the correct, simple way to get all files from the library
-            for (const file of storage.files.values()) {
+            // THE FIX: Use Object.values() because storage.files is a plain object, not a Map.
+            for (const file of Object.values(storage.files)) {
                 if (!file.directory) {
                     allFiles.push(file);
                 }
@@ -167,17 +174,15 @@
             showStatus('Generating secure link...', 'info');
 
             try {
-                // Find the specific file object again by its handle to ensure it's valid
-                const fileToLink = storage.files.get(handle);
+                // THE SECOND FIX: Use bracket notation for object lookup, not .get()
+                const fileToLink = storage.files[handle];
                 if (!fileToLink) throw new Error('File object not found in current session.');
 
-                const url = await fileToLink.link({}); // This is the magic call
+                const url = await fileToLink.link({});
                 
-                // Copy link to clipboard
                 await navigator.clipboard.writeText(url);
                 showStatus('Link copied to clipboard!', 'success');
                 
-                // Open the link in a new tab as a bonus
                 window.open(url, '_blank');
 
             } catch (error) {
