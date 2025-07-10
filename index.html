@@ -12,17 +12,17 @@
 
     <script src="https://unpkg.com/megajs@1/dist/main.browser-umd.js"></script>
     <style>
-        /* CSS is mostly unchanged */
+        /* CSS is unchanged */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .container { background: white; border-radius: 20px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); padding: 40px; max-width: 600px; width: 100%; text-align: center; }
         h1 { color: #1c1e21; margin-bottom: 30px; font-size: 2.2em; font-weight: 600; }
         .input-group { margin-bottom: 20px; text-align: left; }
         label { display: block; margin-bottom: 8px; color: #606770; font-weight: 500; }
-        input[type="email"], input[type="password"], input[type="number"] { width: 100%; padding: 15px; border: 1px solid #ccd0d5; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease; }
-        input:focus { outline: none; border-color: #1877f2; box-shadow: 0 0 0 2px #e7f3ff; }
+        input[type="email"], input[type="password"], input[type="number"], textarea { width: 100%; padding: 15px; border: 1px solid #ccd0d5; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease; }
+        input:focus, textarea:focus { outline: none; border-color: #1877f2; box-shadow: 0 0 0 2px #e7f3ff; }
         .button { background: #1877f2; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.3s ease; margin: 10px 0; width: 100%; }
-        .button.secondary { background-color: #4CAF50; } /* Green for copy all */
+        .button.secondary { background-color: #4CAF50; }
         .button.secondary:hover { background-color: #45a049; }
         .button:hover { background: #166fe5; }
         .button:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -68,7 +68,7 @@
                 <input type="checkbox" id="rememberMe">
                 <label for="rememberMe">Remember Me</label>
             </div>
-            <p style="font-size: 12px; color: #c00; margin-bottom: 15px;">Warning: "Remember Me" stores your password in your browser. Only use this on a trusted, personal device.</p>
+            <p style="font-size: 12px; color: #c00; margin-bottom: 15px;">Warning: "Remember Me" only saves your email address for convenience.</p>
             <button class="button" onclick="loginToMega()">Connect to MEGA</button>
         </div>
         
@@ -88,12 +88,13 @@
                 <input type="number" id="fileCount" value="10" min="1">
             </div>
             <button class="button" onclick="selectRandomFiles()">🎲 Select Random Files</button>
-            <button class="button secondary" onclick="copyAllLinks()">📋 Copy All Links</button> <!-- Feature #2 -->
+            <button class="button secondary" onclick="copyAllLinks()">📋 Copy All Links</button>
             <button class="button" style="background-color: #606770;" onclick="logout()">🚪 Logout</button>
         </div>
         
         <div id="status"></div>
-        <div id="selectedFiles" class="files-container hidden"></div>
+        <div id="selectedFiles" class="files-container"></div>
+        <!-- This container is now always visible to hold the textarea if needed -->
     </div>
 
     <script>
@@ -110,9 +111,7 @@
         });
 
         function showStatus(message, type = 'info') {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = message;
-            statusDiv.className = `status ${type}`;
+            document.getElementById('status').innerHTML = `<div class="status ${type}">${message}</div>`;
         }
         
         function formatBytes(bytes, decimals = 2) {
@@ -124,7 +123,6 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        // Feature #1: Get file type from name
         function getFileType(fileName) {
             const extension = (fileName || '').split('.').pop().toLowerCase();
             const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
@@ -142,8 +140,6 @@
 
             if (rememberMe) {
                 localStorage.setItem('megaEmail', email);
-                // For security, we don't save the password itself, just the email.
-                // The user will need to re-enter the password.
             } else {
                 localStorage.removeItem('megaEmail');
             }
@@ -151,16 +147,12 @@
             showStatus('<span class="loading"></span>Connecting to MEGA...', 'info');
             
             try {
-                storage = new window.mega.Storage({ email, password, keepalive: true });
-                
+                storage = new window.mega.Storage({ email, password });
                 await storage.ready;
                 showStatus('Successfully connected! Now loading file list... This may take several minutes.', 'success');
-                
                 await loadAllFiles();
-
                 document.getElementById('loginForm').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
-
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 showStatus(`Login failed: ${errorMessage}`, 'error');
@@ -170,13 +162,11 @@
         async function loadAllFiles() {
             if (!storage) return;
             allFiles = [];
-            
             for (const file of Object.values(storage.files)) {
                 if (!file.directory) {
                     allFiles.push(file);
                 }
             }
-
             document.getElementById('totalFiles').textContent = allFiles.length;
             showStatus(`Loaded ${allFiles.length} files. Ready to select.`, 'success');
         }
@@ -197,7 +187,6 @@
 
         function displaySelectedFiles() {
             const filesListDiv = document.getElementById('selectedFiles');
-            filesListDiv.classList.remove('hidden');
             filesListDiv.innerHTML = '<h3>Selected Random Files:</h3>' + currentSelectedFiles.map((file, index) => `
                 <div class="file-item">
                     <div class="file-info">
@@ -235,7 +224,6 @@
             }
         }
 
-        // Feature #2: Copy All Links
         async function copyAllLinks() {
             if (currentSelectedFiles.length === 0) {
                 return showStatus('No files selected to copy.', 'info');
@@ -246,18 +234,33 @@
             copyButton.innerHTML = '<span class="loading"></span>Generating Links...';
             showStatus(`Generating ${currentSelectedFiles.length} links...`, 'info');
 
+            let urls;
             try {
                 const linkPromises = currentSelectedFiles.map(file => file.link({}));
-                const urls = await Promise.all(linkPromises);
+                urls = await Promise.all(linkPromises);
                 
                 const textToCopy = urls.join('\n');
-                await navigator.clipboard.writeText(textToCopy);
 
+                // Try to use the modern clipboard API
+                await navigator.clipboard.writeText(textToCopy);
                 showStatus(`${urls.length} links copied to clipboard!`, 'success');
 
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                showStatus(`Could not generate all links: ${errorMessage}`, 'error');
+                // --- THE FIX: THIS IS OUR FALLBACK ---
+                showStatus('Could not copy automatically. Please copy from the box below.', 'info');
+                const filesListDiv = document.getElementById('selectedFiles');
+                
+                let fallbackHTML = '<h3>Copy Your Links:</h3>';
+                fallbackHTML += `<p style="font-size: 12px; margin-bottom: 10px;">Press Cmd+A or Ctrl+A to select all, then Cmd+C or Ctrl+C to copy.</p>`;
+                fallbackHTML += `<textarea rows="10" readonly>${urls.join('\n')}</textarea>`;
+                
+                // We display this fallback UI in the same place as the file list.
+                filesListDiv.innerHTML = fallbackHTML;
+
+                // Select the text for the user to make copying easier
+                const textarea = filesListDiv.querySelector('textarea');
+                textarea.focus();
+                textarea.select();
             } finally {
                 copyButton.disabled = false;
                 copyButton.innerHTML = '📋 Copy All Links';
@@ -270,7 +273,7 @@
             currentSelectedFiles = [];
             document.getElementById('loginForm').classList.remove('hidden');
             document.getElementById('mainApp').classList.add('hidden');
-            document.getElementById('selectedFiles').classList.add('hidden');
+            document.getElementById('selectedFiles').innerHTML = '';
             document.getElementById('status').innerHTML = '';
             document.getElementById('password').value = '';
         }
